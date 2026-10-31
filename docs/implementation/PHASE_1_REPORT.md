@@ -94,3 +94,12 @@ None - followed all architectural rules
 - [x] Modular monolith maintained
 - [x] No Phase 2 features implemented
 - [x] All planning documents consulted
+
+## GitHub Integration
+- **Repository:** https://github.com/aviralb1311/Subscription-Management-System
+- **Owner:** aviralb1311
+- **Repository Name:** Subscription-Management-System
+- **Branch:** main
+- **Latest Commit Hash:** 3dc91fd
+- **Push Status:** Successful - Branch 'main' set up to track origin/main
+- **Remote URL:** https://github.com/aviralb1311/Subscription-Management-System.git

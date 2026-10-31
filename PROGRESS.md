@@ -20,3 +20,10 @@
 - [x] Documentation (README.md)
 
 **Status:** Complete - Ready for Phase 2
+
+## GitHub Integration
+- **Repository:** https://github.com/aviralb1311/Subscription-Management-System
+- **Branch:** main
+- **Latest Commit:** 3dc91fd
+- **Latest Push:** Successful (2026-10-31)
+- **Remote:** origin configured

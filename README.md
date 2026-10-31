@@ -63,3 +63,25 @@ npm test
 
 ## Project Status
 Phase 1: Foundation and Scaffolding - Complete
+
+## GitHub Repository
+[https://github.com/aviralb1311/Subscription-Management-System](https://github.com/aviralb1311/Subscription-Management-System)
+
+## Clone Instructions
+```bash
+git clone https://github.com/aviralb1311/Subscription-Management-System.git
+cd Subscription-Management-System
+```
+
+## Development Workflow
+1. Pull latest changes: `git pull origin main`
+2. Make changes and run tests
+3. Commit completed logical units of work
+4. Push to remote at least once every hour during active development
+
+## Contributing
+- Follow modular monolith architecture
+- Write tests for new functionality
+- Never commit secrets or .env files
+- Use meaningful commit messages
+- Run tests before committing
