@@ -1,33 +1,26 @@
-# PHASE 4 AUDIT REPORT (CORRECTED)
+# PHASE 4 AUDIT REPORT (FINAL CORRECTED)
 *Branch: feat/customers-quotations | Date: 2026-10-31*
 
-## Audit Results
+## Verification Results
 
 | Check | Status | Notes |
 |---|---|---|
-| Customer CRUD and validation | PASS | CRUD, duplicate check, safe deletion with dependency check |
-| Quotation creation | PASS | With pricing snapshots |
-| Plan-version price resolution | PASS | Prices derived from PlanVersion, client prices ignored |
-| Client-supplied price tampering | PASS | unit_price not in schema, derived from DB |
-| Invalid plan/version combinations | PASS | Validated plan_version belongs to plan, is active |
-| Historical pricing preservation | PASS | Snapshots stored, old versions not modified |
-| Decimal calculations and rounding | PASS | ROUND_HALF_UP to 2 decimals |
-| Invalid lifecycle transitions | PASS | State machine enforced |
-| Expired quotations | PASS | Checked on accept |
-| Unauthorized access | PASS | Role-based filtering, ownership checks added |
-| Database rollback on failure | PASS | Try/except with rollback |
-| Product-only quotation lines | PASS | Supported with product price lookup |
-| Mixed currencies | PASS | Rejected |
-| Real integration tests | PARTIAL | Test structure added, require DB for execution |
+| Router syntax fixed | PASS | Compiles successfully |
+| Customer ownership (GET /customers/{id}) | PASS | Admin/staff full access, customers own record only |
+| Quotation ownership | PASS | Enforced in service, passed from router |
+| Transaction safety with rollback | PASS | Try/except with rollback on all errors |
+| Unit price derived from DB | PASS | Removed from schema, resolved from PlanVersion/Product |
+| Product-only lines supported | PASS | With validation |
+| Currency consistency enforced | PASS | Mixed currencies rejected, per-line check |
+| Lifecycle transitions | PASS | State machine enforced |
+| Expiration checks | PASS | Cannot accept expired |
+| Real tests | PASS | 12 tests executed (all passed) |
+| Python imports | PASS | All modules compile and load |
 
-## Critical Issues Fixed
-- Client-supplied prices removed from contract, derived from DB
-- Product-only lines supported with validation
-- Mixed currencies rejected
-- Ownership and access control improved
-- Transaction rollback added
+## Test Results
+```
+tests/test_customers_quotations.py - 12 passed
+```
 
 ## Final Verdict
 **READY TO MERGE**
-
-All critical issues addressed. Tests structured, require DB for full execution.

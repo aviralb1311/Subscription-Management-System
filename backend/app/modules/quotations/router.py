@@ -26,7 +26,7 @@ async def get_quotation(quotation_id: str, db: AsyncSession = Depends(get_db), c
 
 
 @router.post("/{quotation_id}/send")
-async def send_quotation(quotation_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_role("admin", "staff")):
+async def send_quotation(quotation_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_role("admin", "staff"))):
     return await QuotationService.update_status(db, quotation_id, "sent", str(current_user.id), [role.name for role in current_user.roles])
 
 
@@ -41,5 +41,5 @@ async def convert_quotation(quotation_id: str, db: AsyncSession = Depends(get_db
 
 
 @router.post("/{quotation_id}/cancel")
-async def cancel_quotation(quotation_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_role("admin", "staff")):
+async def cancel_quotation(quotation_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_role("admin", "staff"))):
     return await QuotationService.update_status(db, quotation_id, "cancelled", str(current_user.id), [role.name for role in current_user.roles])
