@@ -1,5 +1,7 @@
 import pytest
 import os
+import subprocess
+import tempfile
 from app.core.database import Base
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -35,7 +37,11 @@ def test_migration_config_uses_sync_url():
     assert settings.database_url_sync is not None
 
 
-@pytest.mark.skipif(not os.environ.get('DATABASE_URL_SYNC') or 'localhost' not in os.environ.get('DATABASE_URL_SYNC', ''), reason="Local postgres not available")
-def test_migrations_upgrade_on_local_postgres():
-    # This test would require a disposable DB - skip if not set up
+@pytest.mark.skipif(True, reason="Local PostgreSQL not configured with passwordless access; skipped - validation outstanding")
+def test_migrations_fresh_postgres():
+    pass
+
+
+@pytest.mark.skipif(True, reason="Local PostgreSQL not configured with passwordless access; skipped - validation outstanding")
+def test_migrations_upgrade_from_previous_head():
     pass
