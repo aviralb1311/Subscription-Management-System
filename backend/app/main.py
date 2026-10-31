@@ -65,3 +65,7 @@ from app.modules.customers.router import router as customers_router
 from app.modules.quotations.router import router as quotations_router
 app.include_router(customers_router, prefix="/api/v1")
 app.include_router(quotations_router, prefix="/api/v1")
+
+
+from app.modules.subscriptions import router as subscriptions_router
+app.include_router(subscriptions_router.router, prefix="/api/v1/subscriptions", tags=["Subscriptions"])
