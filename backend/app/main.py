@@ -28,3 +28,34 @@ async def root():
 
 from app.modules.auth.router import router as auth_router
 app.include_router(auth_router, prefix="/api/v1")
+
+from app.modules.products.router import router as products_router
+app.include_router(products_router, prefix="/api/v1")
+
+# Plans router
+from fastapi import APIRouter
+from app.modules.products.schemas import PlanCreate, PlanUpdate, PlanResponse, PlanVersionResponse
+from app.modules.products.service import PlanService
+from app.core.dependencies import get_current_user, require_role
+from app.modules.auth.models import User
+from typing import List
+
+plans_router = APIRouter(prefix="/plans", tags=["plans"])
+
+@plans_router.post("/", response_model=PlanResponse)
+async def create_plan(plan: PlanCreate, db=Depends(get_db), current_user: User = Depends(require_role("admin", "staff"))):
+    return await PlanService.create(db, plan.model_dump())
+
+@plans_router.get("/", response_model=List[PlanResponse])
+async def list_plans(skip: int = 0, limit: int = 100, db=Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await PlanService.list(db, skip, limit)
+
+@plans_router.get("/{plan_id}", response_model=PlanResponse)
+async def get_plan(plan_id: str, db=Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await PlanService.get(db, plan_id)
+
+@plans_router.post("/{plan_id}/versions", response_model=PlanVersionResponse)
+async def create_plan_version(plan_id: str, price: float, currency: str = "USD", db=Depends(get_db), current_user: User = Depends(require_role("admin"))):
+    return await PlanService.create_version(db, plan_id, price, currency)
+
+app.include_router(plans_router, prefix="/api/v1")
