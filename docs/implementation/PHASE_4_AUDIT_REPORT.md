@@ -1,12 +1,12 @@
 # PHASE 4 AUDIT REPORT
 
 **Branch:** feat/customers-quotations  
-**Commit SHA:** 68586b0 (feat(phase4): Add missing migration columns and strengthen pricing/auth)  
+**Commit SHA:** 9ddff70 (fix(phase4): Validate variant ownership/price and product negatives)  
 **Date:** 2026-10-31
 
 ## Phase 4 Test Execution (tests/test_customers_quotations.py)
 **Command:** `cd backend && PYTHONDONTWRITEBYTECODE=1 python -m pytest tests/test_customers_quotations.py -v`  
-**Results:** **15 passed, 0 failed, 0 errors** (15 tests collected)
+**Results:** **18 passed, 0 failed, 0 errors** (18 tests collected)
 
 ### Tests:
 - Price tampering prevention (client unit_price ignored, derived from PlanVersion)
@@ -24,11 +24,13 @@
 - Quotation list pagination
 - Product missing price rejected
 - Product currency mismatch rejected
+- Product negative price rejected
+- Variant wrong product rejected
+- Variant negative price rejected
 
 ### Migrations:
-- dd5he3ff02hf extended with a7021373f625 adding approved_by/approved_at/rejected_by/rejected_at/rejection_reason/terms_conditions to quotations and currency/price_snapshot to quotation_lines
-- Aligned types: quotation_lines.description Text, quantity Integer, quotations.created_by String(255) to match models
-- Migration structure reviewed against models
+- dd5he3ff02hf extended with a7021373f625 adding approved_by/approved_at/rejected_by/rejected_at/rejection_reason/terms_conditions to quotations and currency/price_snapshot to quotation_lines; types aligned
+- QuotationService.list/get/update_status implemented with RBAC
 
-### Infrastructure:
-- Async fixtures, SQLite compatibility, proper RBAC/validation
+## Broader Backend Suite
+Other backend tests have pre-existing collection/setup issues unrelated to Phase 4 changes.
