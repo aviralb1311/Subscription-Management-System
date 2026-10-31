@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.modules.customers.service import CustomerService
 from app.modules.quotations.service import QuotationService
@@ -170,13 +170,8 @@ async def test_transaction_rollback_on_failure(db_session: AsyncSession):
     original_commit = db_session.commit
 
     async def failing_commit():
-        # Trigger a constraint violation after objects have been flushed/added
-        from sqlalchemy import text
-        await db_session.execute(text("CREATE TABLE IF NOT EXISTS _bad_constraint_trigger(x INTEGER PRIMARY KEY)"))
-        # Create a duplicate unique constraint violation on quotation number by inserting duplicate
-        # Get the quotation we just added
-        from app.modules.quotations.models import Quotation
-        result = await db_session.execute(text("SELECT quotation_number FROM quotations LIMIT 1"))
+        await db_session.flush()
+        result = await db_session.execute(text("SELECT quotation_number FROM quotations"))
         row = result.first()
         if row and row[0]:
             await db_session.execute(text(f"INSERT INTO quotations (id, quotation_number, customer_id, currency, status, subtotal, discount_total, tax_total, total) VALUES (lower(hex(randomblob(16))), '{row[0]}', lower(hex(randomblob(16))), 'USD', 'draft', 0,0,0,0)"))
