@@ -69,3 +69,7 @@ app.include_router(quotations_router, prefix="/api/v1")
 
 from app.modules.subscriptions import router as subscriptions_router
 app.include_router(subscriptions_router.router, prefix="/api/v1/subscriptions", tags=["Subscriptions"])
+
+
+from app.modules.invoices import router as invoices_router
+app.include_router(invoices_router.router, prefix="/api/v1/invoices", tags=["Invoices"])
