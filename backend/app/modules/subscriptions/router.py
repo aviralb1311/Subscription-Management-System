@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.dependencies import get_current_user
 from app.modules.auth.models import User
 from app.modules.subscriptions.service import SubscriptionService
 from app.modules.subscriptions.schemas import SubscriptionCreateFromQuotation, SubscriptionResponse
