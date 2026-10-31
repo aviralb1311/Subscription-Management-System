@@ -160,8 +160,13 @@ async def test_missing_role_denied(db_session: AsyncSession):
 @pytest.mark.asyncio
 async def test_transaction_rollback_on_failure(db_session: AsyncSession):
     customer = await CustomerService.create(db_session, {"first_name": "Test", "email": "t11@test.com"})
+    plan = Plan(name="Basic", code="B6", billing_cycle="monthly")
+    db_session.add(plan)
+    await db_session.flush()
+    pv = PlanVersion(plan_id=plan.id, version=1, price=Decimal("10.00"), currency="USD", effective_from=datetime.utcnow())
+    db_session.add(pv)
     await db_session.commit()
-    data = {"customer_id": str(customer.id), "currency": "USD", "lines": [{"quantity": 1}]}
+    data = {"customer_id": str(customer.id), "currency": "USD", "lines": [{"plan_id": str(plan.id), "plan_version_id": str(pv.id), "quantity": 1}, {"quantity": 1}]}
     with pytest.raises(HTTPException):
         await QuotationService.create(db_session, data, "user1", ["admin"])
     result = await db_session.execute(select(Quotation))
