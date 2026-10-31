@@ -1,3 +1,6 @@
+from pathlib import Path
+import subprocess
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
@@ -18,6 +21,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def initialize_database_schema():
+    backend_dir = Path(__file__).resolve().parent.parent
+    subprocess.run(["alembic", "upgrade", "head"], cwd=backend_dir, check=True)
 
 
 @app.get("/health")
