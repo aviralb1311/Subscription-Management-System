@@ -1,3 +1,6 @@
+from pathlib import Path
+import subprocess
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
@@ -20,6 +23,18 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+async def run_database_migrations():
+    # Render's service root is backend/. Run Alembic before accepting requests so
+    # a fresh production database is initialized using the repository migration chain.
+    backend_dir = Path(__file__).resolve().parent.parent
+    subprocess.run(
+        ["alembic", "upgrade", "head"],
+        cwd=backend_dir,
+        check=True,
+    )
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "subscription-intelligence-platform"}
@@ -28,6 +43,7 @@ async def health_check():
 @app.get("/")
 async def root():
     return {"message": "Subscription Intelligence Platform API"}
+
 
 from app.modules.auth.router import router as auth_router
 app.include_router(auth_router, prefix="/api/v1")
@@ -46,21 +62,26 @@ from typing import List
 
 plans_router = APIRouter(prefix="/plans", tags=["plans"])
 
+
 @plans_router.post("/", response_model=PlanResponse)
 async def create_plan(plan: PlanCreate, db=Depends(get_db), current_user: User = Depends(require_role("admin", "staff"))):
     return await PlanService.create(db, plan.model_dump())
+
 
 @plans_router.get("/", response_model=List[PlanResponse])
 async def list_plans(skip: int = 0, limit: int = 100, db=Depends(get_db), current_user: User = Depends(get_current_user)):
     return await PlanService.list(db, skip, limit)
 
+
 @plans_router.get("/{plan_id}", response_model=PlanResponse)
 async def get_plan(plan_id: str, db=Depends(get_db), current_user: User = Depends(get_current_user)):
     return await PlanService.get(db, plan_id)
 
+
 @plans_router.post("/{plan_id}/versions", response_model=PlanVersionResponse)
 async def create_plan_version(plan_id: str, price: float, currency: str = "USD", db=Depends(get_db), current_user: User = Depends(require_role("admin"))):
     return await PlanService.create_version(db, plan_id, price, currency)
+
 
 app.include_router(plans_router, prefix="/api/v1")
 
@@ -84,7 +105,6 @@ app.include_router(analytics_router.router, prefix="/api/v1/analytics", tags=["A
 
 from app.modules.payments import router as payments_router
 app.include_router(payments_router.router, prefix="/api/v1/payments", tags=["Payments"])
-
 
 
 from app.modules.analytics import router as analytics_router
