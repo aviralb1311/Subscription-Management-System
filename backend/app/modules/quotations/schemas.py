@@ -11,7 +11,7 @@ class QuotationLineCreate(BaseModel):
     plan_version_id: Optional[str] = None
     description: Optional[str] = None
     quantity: Decimal
-    unit_price: Decimal
+    # unit_price removed - derived from DB for plan lines
 
 
 class QuotationLineResponse(BaseModel):

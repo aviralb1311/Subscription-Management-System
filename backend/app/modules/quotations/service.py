@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from fastapi import HTTPException, status
 from app.modules.quotations.models import Quotation, QuotationLine
-from app.modules.products.models import PlanVersion
+from app.modules.products.models import PlanVersion, Product, ProductVariant
 from app.modules.customers.models import Customer
 import uuid
 
@@ -14,6 +14,7 @@ class QuotationService:
     async def create(db: AsyncSession, data: dict, user_id: str = None):
         lines_data = data.pop('lines', [])
         customer_id = data.get('customer_id')
+        quotation_currency = data.get('currency', 'USD')
         
         # Validate customer exists
         customer_result = await db.execute(select(Customer).where(Customer.id == customer_id, Customer.deleted_at.is_(None)))
@@ -24,6 +25,7 @@ class QuotationService:
         
         subtotal = Decimal(0)
         processed_lines = []
+        line_currencies = set()
         
         for line in lines_data:
             quantity = Decimal(str(line['quantity']))
@@ -32,9 +34,10 @@ class QuotationService:
             
             plan_version_id = line.get('plan_version_id')
             plan_id = line.get('plan_id')
+            product_id = line.get('product_id')
             
             unit_price = None
-            currency = "USD"
+            line_currency = quotation_currency
             
             if plan_version_id:
                 pv_result = await db.execute(select(PlanVersion).where(PlanVersion.id == plan_version_id))
@@ -46,10 +49,28 @@ class QuotationService:
                 if plan_version.effective_to is not None:
                     raise HTTPException(status_code=400, detail="Cannot use inactive plan version")
                 unit_price = Decimal(str(plan_version.price))
-                currency = plan_version.currency or "USD"
+                line_currency = plan_version.currency or quotation_currency
+            elif product_id:
+                prod_result = await db.execute(select(Product).where(Product.id == product_id))
+                product = prod_result.scalar_one_or_none()
+                if not product:
+                    raise HTTPException(status_code=400, detail="Invalid product")
+                if not product.is_active or product.deleted_at:
+                    raise HTTPException(status_code=400, detail="Product not available")
+                unit_price = Decimal(str(product.sales_price))
+                if line.get('product_variant_id'):
+                    var_result = await db.execute(select(ProductVariant).where(ProductVariant.id == line['product_variant_id']))
+                    variant = var_result.scalar_one_or_none()
+                    if not variant or variant.product_id != product.id:
+                        raise HTTPException(status_code=400, detail="Invalid product variant")
+                    unit_price += Decimal(str(variant.price_adjustment))
             else:
-                # Only allow if explicitly provided and validated - but per requirements, must use plan version
-                raise HTTPException(status_code=400, detail="plan_version_id is required for plan-based lines")
+                raise HTTPException(status_code=400, detail="Either plan_version_id or product_id required")
+            
+            line_currencies.add(line_currency)
+            if len(line_currencies) > 1 or (line_currencies and quotation_currency not in line_currencies and len(line_currencies) == 1):
+                # Enforce same currency
+                pass
             
             line_total = (quantity * unit_price).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             subtotal += line_total
@@ -58,8 +79,12 @@ class QuotationService:
                 **line,
                 'quantity': quantity,
                 'unit_price': unit_price,
-                'line_total': line_total
+                'line_total': line_total,
+                'description': line.get('description') or f"Item"
             })
+        
+        if len(line_currencies) > 1:
+            raise HTTPException(status_code=400, detail="Mixed currencies not allowed in a single quotation")
         
         subtotal = subtotal.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         discount_total = Decimal(0)
@@ -72,9 +97,11 @@ class QuotationService:
             discount_total=discount_total,
             tax_total=tax_total,
             total=total,
-            currency=currency,
+            currency=quotation_currency,
             created_by=user_id,
-            **{k: v for k, v in data.items() if k != 'lines'}
+            customer_id=customer_id,
+            valid_until=data.get('valid_until'),
+            notes=data.get('notes')
         )
         db.add(quotation)
         await db.flush()
@@ -88,28 +115,46 @@ class QuotationService:
                 plan_version_id=line.get('plan_version_id'),
                 description=line.get('description', ''),
                 quantity=line['quantity'],
-                unit_price=line['unit_price'],  # SNAPSHOT - derived from plan version
+                unit_price=line['unit_price'],
                 discount_amount=Decimal(0),
                 tax_amount=Decimal(0),
                 line_total=line['line_total']
             )
             db.add(quotation_line)
         
-        await db.commit()
-        await db.refresh(quotation)
-        return quotation
+        try:
+            await db.commit()
+            await db.refresh(quotation)
+            return quotation
+        except Exception as e:
+            await db.rollback()
+            raise
     
     @staticmethod
-    async def list(db: AsyncSession, skip: int = 0, limit: int = 100):
-        result = await db.execute(select(Quotation).offset(skip).limit(limit))
+    async def list(db: AsyncSession, skip: int = 0, limit: int = 100, user_id: str = None, user_roles: list = None):
+        query = select(Quotation)
+        if user_roles and 'admin' not in user_roles and 'staff' not in user_roles:
+            # Customer can only see own quotations
+            customer_result = await db.execute(select(Customer).where(Customer.user_id == user_id))
+            customer = customer_result.scalar_one_or_none()
+            if customer:
+                query = query.where(Quotation.customer_id == customer.id)
+            else:
+                return []
+        result = await db.execute(query.offset(skip).limit(limit))
         return result.scalars().all()
     
     @staticmethod
-    async def get(db: AsyncSession, quotation_id: str):
+    async def get(db: AsyncSession, quotation_id: str, user_id: str = None, user_roles: list = None):
         result = await db.execute(select(Quotation).where(Quotation.id == quotation_id))
         quotation = result.scalar_one_or_none()
         if not quotation:
             raise HTTPException(status_code=404, detail="Quotation not found")
+        if user_roles and 'admin' not in user_roles and 'staff' not in user_roles:
+            customer_result = await db.execute(select(Customer).where(Customer.user_id == user_id))
+            customer = customer_result.scalar_one_or_none()
+            if not customer or str(customer.id) != str(quotation.customer_id):
+                raise HTTPException(status_code=403, detail="Access denied")
         return quotation
     
     @staticmethod
