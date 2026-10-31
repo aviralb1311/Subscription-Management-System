@@ -17,20 +17,25 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # quotations missing columns
+    # Align with model design
     op.add_column('quotations', sa.Column('approved_by', sa.String(length=255), nullable=True))
     op.add_column('quotations', sa.Column('approved_at', sa.DateTime(), nullable=True))
     op.add_column('quotations', sa.Column('rejected_by', sa.String(length=255), nullable=True))
     op.add_column('quotations', sa.Column('rejected_at', sa.DateTime(), nullable=True))
     op.add_column('quotations', sa.Column('rejection_reason', sa.Text(), nullable=True))
     op.add_column('quotations', sa.Column('terms_conditions', sa.Text(), nullable=True))
-    # Ensure currency is not null as per model requirement
-    # quotation_lines missing columns
     op.add_column('quotation_lines', sa.Column('currency', sa.String(length=3), nullable=True))
     op.add_column('quotation_lines', sa.Column('price_snapshot', postgresql.JSONB(astext_type=sa.Text()), nullable=True))
+    # Fix types to match models
+    op.alter_column('quotation_lines', 'description', type_=sa.Text(), existing_type=sa.String(length=255), existing_nullable=True)
+    op.alter_column('quotation_lines', 'quantity', type_=sa.Integer(), existing_type=sa.Numeric(precision=10, scale=3), existing_nullable=False, postgresql_using='quantity::integer')
+    op.alter_column('quotations', 'created_by', type_=sa.String(length=255), existing_type=postgresql.UUID(as_uuid=True), existing_nullable=True)
 
 
 def downgrade() -> None:
+    op.alter_column('quotations', 'created_by', type_=postgresql.UUID(as_uuid=True), existing_type=sa.String(length=255), existing_nullable=True)
+    op.alter_column('quotation_lines', 'quantity', type_=sa.Numeric(precision=10, scale=3), existing_type=sa.Integer(), existing_nullable=False)
+    op.alter_column('quotation_lines', 'description', type_=sa.String(length=255), existing_type=sa.Text(), existing_nullable=True)
     op.drop_column('quotation_lines', 'price_snapshot')
     op.drop_column('quotation_lines', 'currency')
     op.drop_column('quotations', 'terms_conditions')

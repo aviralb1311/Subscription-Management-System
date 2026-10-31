@@ -187,3 +187,75 @@ async def test_transaction_rollback_on_failure(db_session: AsyncSession):
     assert len(result.scalars().all()) == 0
     result2 = await db_session.execute(select(QuotationLine))
     assert len(result2.scalars().all()) == 0
+
+
+@pytest.mark.asyncio
+async def test_admin_can_list_all_quotations(db_session: AsyncSession):
+    customer1 = await CustomerService.create(db_session, {"first_name": "A", "email": "a1@test.com"})
+    customer2 = await CustomerService.create(db_session, {"first_name": "B", "email": "b1@test.com"})
+    plan = Plan(name="Basic", code="BL", billing_cycle="monthly")
+    db_session.add(plan)
+    await db_session.flush()
+    pv = PlanVersion(plan_id=plan.id, version=1, price=Decimal("10.00"), currency="USD", effective_from=datetime.utcnow())
+    db_session.add(pv)
+    await db_session.commit()
+    await QuotationService.create(db_session, {"customer_id": str(customer1.id), "currency": "USD", "lines": [{"plan_id": str(plan.id), "plan_version_id": str(pv.id), "quantity": 1}]}, "u1", ["admin"])
+    await QuotationService.create(db_session, {"customer_id": str(customer2.id), "currency": "USD", "lines": [{"plan_id": str(plan.id), "plan_version_id": str(pv.id), "quantity": 1}]}, "u2", ["admin"])
+    quotes = await QuotationService.list(db_session, 0, 100, "u1", ["admin"])
+    assert len(quotes) >= 2
+
+
+@pytest.mark.asyncio
+async def test_customer_can_only_list_own_quotations(db_session: AsyncSession):
+    customer1 = await CustomerService.create(db_session, {"first_name": "A", "email": "a2@test.com", "user_id": "33333333-3333-3333-3333-333333333333"})
+    customer2 = await CustomerService.create(db_session, {"first_name": "B", "email": "b2@test.com", "user_id": "44444444-4444-4444-4444-444444444444"})
+    plan = Plan(name="Basic", code="BM", billing_cycle="monthly")
+    db_session.add(plan)
+    await db_session.flush()
+    pv = PlanVersion(plan_id=plan.id, version=1, price=Decimal("10.00"), currency="USD", effective_from=datetime.utcnow())
+    db_session.add(pv)
+    await db_session.commit()
+    await QuotationService.create(db_session, {"customer_id": str(customer1.id), "currency": "USD", "lines": [{"plan_id": str(plan.id), "plan_version_id": str(pv.id), "quantity": 1}]}, "33333333-3333-3333-3333-333333333333", ["customer"])
+    await QuotationService.create(db_session, {"customer_id": str(customer2.id), "currency": "USD", "lines": [{"plan_id": str(plan.id), "plan_version_id": str(pv.id), "quantity": 1}]}, "44444444-4444-4444-4444-444444444444", ["customer"])
+    quotes = await QuotationService.list(db_session, 0, 100, "33333333-3333-3333-3333-333333333333", ["customer"])
+    assert all(str(q.customer_id) == str(customer1.id) for q in quotes)
+    assert len(quotes) == 1
+
+
+@pytest.mark.asyncio
+async def test_quotation_list_pagination(db_session: AsyncSession):
+    customer = await CustomerService.create(db_session, {"first_name": "A", "email": "a3@test.com"})
+    plan = Plan(name="Basic", code="BN", billing_cycle="monthly")
+    db_session.add(plan)
+    await db_session.flush()
+    pv = PlanVersion(plan_id=plan.id, version=1, price=Decimal("10.00"), currency="USD", effective_from=datetime.utcnow())
+    db_session.add(pv)
+    await db_session.commit()
+    for i in range(3):
+        await QuotationService.create(db_session, {"customer_id": str(customer.id), "currency": "USD", "lines": [{"plan_id": str(plan.id), "plan_version_id": str(pv.id), "quantity": 1}]}, "u1", ["admin"])
+    quotes = await QuotationService.list(db_session, 1, 1, "u1", ["admin"])
+    assert len(quotes) == 1
+
+
+@pytest.mark.asyncio
+async def test_product_missing_price_rejected(db_session: AsyncSession):
+    customer = await CustomerService.create(db_session, {"first_name": "Test", "email": "bad1@test.com"})
+    product = Product(name="Bad", code="BAD1", sales_price=None, is_active=True)
+    db_session.add(product)
+    await db_session.commit()
+    data = {"customer_id": str(customer.id), "currency": "USD", "lines": [{"product_id": str(product.id), "quantity": 1}]}
+    with pytest.raises(HTTPException) as exc:
+        await QuotationService.create(db_session, data, "user1", ["admin"])
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_product_currency_mismatch_rejected(db_session: AsyncSession):
+    customer = await CustomerService.create(db_session, {"first_name": "Test", "email": "bad2@test.com"})
+    product = Product(name="Bad", code="BAD2", sales_price=Decimal("10.00"), currency="EUR", is_active=True)
+    db_session.add(product)
+    await db_session.commit()
+    data = {"customer_id": str(customer.id), "currency": "USD", "lines": [{"product_id": str(product.id), "quantity": 1}]}
+    with pytest.raises(HTTPException) as exc:
+        await QuotationService.create(db_session, data, "user1", ["admin"])
+    assert exc.value.status_code == 400

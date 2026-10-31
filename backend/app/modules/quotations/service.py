@@ -205,3 +205,21 @@ class QuotationService:
         await db.commit()
         result = await db.execute(select(Quotation).options(selectinload(Quotation.lines)).where(Quotation.id == quotation.id))
         return result.scalar_one()
+
+    @staticmethod
+    async def list(db: AsyncSession, skip: int = 0, limit: int = 100, user_id: str = None, user_roles: list = None):
+        if not user_roles or len(user_roles) == 0:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        query = select(Quotation).options(selectinload(Quotation.lines))
+        if 'admin' in user_roles or 'staff' in user_roles:
+            pass
+        elif 'customer' in user_roles:
+            customer_result = await db.execute(select(Customer).where(Customer.user_id == user_id))
+            customer = customer_result.scalar_one_or_none()
+            if not customer:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+            query = query.where(Quotation.customer_id == customer.id)
+        else:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        result = await db.execute(query.offset(skip).limit(limit))
+        return result.scalars().all()
