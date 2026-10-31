@@ -78,16 +78,31 @@ class QuotationService:
                         raise HTTPException(status_code=400, detail="Product not available")
                     if product.sales_price is None:
                         raise HTTPException(status_code=400, detail="Product has invalid price")
-                    unit_price = Decimal(str(product.sales_price))
+                    sales_price_dec = Decimal(str(product.sales_price))
+                    if sales_price_dec < 0:
+                        raise HTTPException(status_code=400, detail="Product has invalid price")
+                    unit_price = sales_price_dec
                     product_currency = getattr(product, 'currency', None) or quotation_currency
                     line_currency = product_currency
                     if line.get('product_variant_id'):
                         var_result = await db.execute(select(ProductVariant).where(ProductVariant.id == line['product_variant_id']))
                         variant = var_result.scalar_one_or_none()
-                        if not variant or variant.product_id != product.id:
+                        if not variant or str(variant.product_id) != str(product.id):
                             raise HTTPException(status_code=400, detail="Invalid product variant")
+                        if not getattr(variant, 'is_active', True):
+                            raise HTTPException(status_code=400, detail="Invalid product variant")
+                        variant_currency = getattr(variant, 'currency', None) or product_currency or quotation_currency
+                        if variant_currency != quotation_currency:
+                            raise HTTPException(status_code=400, detail="Line currency must match quotation currency")
                         if hasattr(variant, 'price_adjustment') and variant.price_adjustment is not None:
-                            unit_price += Decimal(str(variant.price_adjustment))
+                            var_adj = Decimal(str(variant.price_adjustment))
+                            if var_adj < 0:
+                                raise HTTPException(status_code=400, detail="Invalid product variant")
+                            unit_price += var_adj
+                        elif hasattr(variant, 'price') and variant.price is not None:
+                            var_price = Decimal(str(variant.price))
+                            if var_price < 0:
+                                raise HTTPException(status_code=400, detail="Invalid product variant")
                     if hasattr(product, 'currency') and product.currency and product.currency != quotation_currency:
                         raise HTTPException(status_code=400, detail="Line currency must match quotation currency")
                 else:
@@ -156,6 +171,24 @@ class QuotationService:
             raise
 
     @staticmethod
+    async def list(db: AsyncSession, skip: int = 0, limit: int = 100, user_id: str = None, user_roles: list = None):
+        if not user_roles or len(user_roles) == 0:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        query = select(Quotation).options(selectinload(Quotation.lines))
+        if 'admin' in user_roles or 'staff' in user_roles:
+            pass
+        elif 'customer' in user_roles:
+            customer_result = await db.execute(select(Customer).where(Customer.user_id == user_id))
+            customer = customer_result.scalar_one_or_none()
+            if not customer:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+            query = query.where(Quotation.customer_id == customer.id)
+        else:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        result = await db.execute(query.offset(skip).limit(limit))
+        return result.scalars().all()
+    
+    @staticmethod
     async def get(db: AsyncSession, quotation_id: str, user_id: str = None, user_roles: list = None):
         if not user_roles or len(user_roles) == 0:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
@@ -205,21 +238,3 @@ class QuotationService:
         await db.commit()
         result = await db.execute(select(Quotation).options(selectinload(Quotation.lines)).where(Quotation.id == quotation.id))
         return result.scalar_one()
-
-    @staticmethod
-    async def list(db: AsyncSession, skip: int = 0, limit: int = 100, user_id: str = None, user_roles: list = None):
-        if not user_roles or len(user_roles) == 0:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-        query = select(Quotation).options(selectinload(Quotation.lines))
-        if 'admin' in user_roles or 'staff' in user_roles:
-            pass
-        elif 'customer' in user_roles:
-            customer_result = await db.execute(select(Customer).where(Customer.user_id == user_id))
-            customer = customer_result.scalar_one_or_none()
-            if not customer:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-            query = query.where(Quotation.customer_id == customer.id)
-        else:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-        result = await db.execute(query.offset(skip).limit(limit))
-        return result.scalars().all()

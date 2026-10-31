@@ -259,3 +259,48 @@ async def test_product_currency_mismatch_rejected(db_session: AsyncSession):
     with pytest.raises(HTTPException) as exc:
         await QuotationService.create(db_session, data, "user1", ["admin"])
     assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_product_negative_price_rejected(db_session: AsyncSession):
+    customer = await CustomerService.create(db_session, {"first_name": "Test", "email": "neg1@test.com"})
+    product = Product(name="Bad", code="NEG1", sales_price=Decimal("-5.00"), is_active=True)
+    db_session.add(product)
+    await db_session.commit()
+    data = {"customer_id": str(customer.id), "currency": "USD", "lines": [{"product_id": str(product.id), "quantity": 1}]}
+    with pytest.raises(HTTPException) as exc:
+        await QuotationService.create(db_session, data, "user1", ["admin"])
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_variant_wrong_product_rejected(db_session: AsyncSession):
+    from app.modules.products.models import ProductVariant
+    customer = await CustomerService.create(db_session, {"first_name": "Test", "email": "v1@test.com"})
+    product1 = Product(name="P1", code="VP1", sales_price=Decimal("10.00"), is_active=True)
+    product2 = Product(name="P2", code="VP2", sales_price=Decimal("10.00"), is_active=True)
+    db_session.add_all([product1, product2])
+    await db_session.flush()
+    variant = ProductVariant(product_id=product2.id, name="V", sku="V1", price_adjustment=Decimal("1.00"), currency="USD", is_active=True)
+    db_session.add(variant)
+    await db_session.commit()
+    data = {"customer_id": str(customer.id), "currency": "USD", "lines": [{"product_id": str(product1.id), "product_variant_id": str(variant.id), "quantity": 1}]}
+    with pytest.raises(HTTPException) as exc:
+        await QuotationService.create(db_session, data, "user1", ["admin"])
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_variant_negative_price_rejected(db_session: AsyncSession):
+    from app.modules.products.models import ProductVariant
+    customer = await CustomerService.create(db_session, {"first_name": "Test", "email": "v2@test.com"})
+    product = Product(name="P1", code="VN1", sales_price=Decimal("10.00"), is_active=True)
+    db_session.add(product)
+    await db_session.flush()
+    variant = ProductVariant(product_id=product.id, name="V", sku="V2", price_adjustment=Decimal("-2.00"), currency="USD", is_active=True)
+    db_session.add(variant)
+    await db_session.commit()
+    data = {"customer_id": str(customer.id), "currency": "USD", "lines": [{"product_id": str(product.id), "product_variant_id": str(variant.id), "quantity": 1}]}
+    with pytest.raises(HTTPException) as exc:
+        await QuotationService.create(db_session, data, "user1", ["admin"])
+    assert exc.value.status_code == 400
