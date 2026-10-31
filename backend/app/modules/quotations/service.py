@@ -76,15 +76,20 @@ class QuotationService:
                         raise HTTPException(status_code=400, detail="Invalid product")
                     if not product.is_active or product.deleted_at:
                         raise HTTPException(status_code=400, detail="Product not available")
+                    if product.sales_price is None:
+                        raise HTTPException(status_code=400, detail="Product has invalid price")
                     unit_price = Decimal(str(product.sales_price))
+                    product_currency = getattr(product, 'currency', None) or quotation_currency
+                    line_currency = product_currency
                     if line.get('product_variant_id'):
                         var_result = await db.execute(select(ProductVariant).where(ProductVariant.id == line['product_variant_id']))
                         variant = var_result.scalar_one_or_none()
                         if not variant or variant.product_id != product.id:
                             raise HTTPException(status_code=400, detail="Invalid product variant")
-                        if hasattr(variant, 'price_adjustment') and variant.price_adjustment:
+                        if hasattr(variant, 'price_adjustment') and variant.price_adjustment is not None:
                             unit_price += Decimal(str(variant.price_adjustment))
-                    line_currency = quotation_currency
+                    if hasattr(product, 'currency') and product.currency and product.currency != quotation_currency:
+                        raise HTTPException(status_code=400, detail="Line currency must match quotation currency")
                 else:
                     raise HTTPException(status_code=400, detail="Either plan_version_id or product_id required")
                 
@@ -151,6 +156,25 @@ class QuotationService:
             raise
 
     @staticmethod
+    async def get(db: AsyncSession, quotation_id: str, user_id: str = None, user_roles: list = None):
+        if not user_roles or len(user_roles) == 0:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        result = await db.execute(select(Quotation).options(selectinload(Quotation.lines)).where(Quotation.id == quotation_id))
+        quotation = result.scalar_one_or_none()
+        if not quotation:
+            raise HTTPException(status_code=404, detail="Quotation not found")
+        if 'admin' in user_roles or 'staff' in user_roles:
+            return quotation
+        elif 'customer' in user_roles:
+            customer_result = await db.execute(select(Customer).where(Customer.user_id == user_id))
+            customer = customer_result.scalar_one_or_none()
+            if not customer or str(customer.id) != str(quotation.customer_id):
+                raise HTTPException(status_code=403, detail="Access denied")
+            return quotation
+        else:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    
+    @staticmethod
     async def update_status(db: AsyncSession, quotation_id: str, target_status: str, user_id: str = None, user_roles: list = None):
         if not user_roles or len(user_roles) == 0:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
@@ -181,22 +205,3 @@ class QuotationService:
         await db.commit()
         result = await db.execute(select(Quotation).options(selectinload(Quotation.lines)).where(Quotation.id == quotation.id))
         return result.scalar_one()
-
-    @staticmethod
-    async def get(db: AsyncSession, quotation_id: str, user_id: str = None, user_roles: list = None):
-        if not user_roles or len(user_roles) == 0:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-        result = await db.execute(select(Quotation).options(selectinload(Quotation.lines)).where(Quotation.id == quotation_id))
-        quotation = result.scalar_one_or_none()
-        if not quotation:
-            raise HTTPException(status_code=404, detail="Quotation not found")
-        if 'admin' in user_roles or 'staff' in user_roles:
-            return quotation
-        elif 'customer' in user_roles:
-            customer_result = await db.execute(select(Customer).where(Customer.user_id == user_id))
-            customer = customer_result.scalar_one_or_none()
-            if not customer or str(customer.id) != str(quotation.customer_id):
-                raise HTTPException(status_code=403, detail="Access denied")
-            return quotation
-        else:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
