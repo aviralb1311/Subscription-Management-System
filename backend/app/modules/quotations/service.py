@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from fastapi import HTTPException, status
@@ -44,7 +45,6 @@ class QuotationService:
             
             subtotal = Decimal(0)
             processed_lines = []
-            line_currencies = []
             
             for line in lines_data:
                 quantity = Decimal(str(line['quantity']))
@@ -82,15 +82,14 @@ class QuotationService:
                         variant = var_result.scalar_one_or_none()
                         if not variant or variant.product_id != product.id:
                             raise HTTPException(status_code=400, detail="Invalid product variant")
-                        unit_price += Decimal(str(variant.price_adjustment))
+                        if hasattr(variant, 'price_adjustment') and variant.price_adjustment:
+                            unit_price += Decimal(str(variant.price_adjustment))
                     line_currency = quotation_currency
                 else:
                     raise HTTPException(status_code=400, detail="Either plan_version_id or product_id required")
                 
                 if line_currency != quotation_currency:
                     raise HTTPException(status_code=400, detail="Line currency must match quotation currency")
-                
-                line_currencies.append(line_currency)
                 
                 line_total = (quantity * unit_price).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
                 subtotal += line_total
@@ -134,6 +133,7 @@ class QuotationService:
                     description=line.get('description', ''),
                     quantity=line['quantity'],
                     unit_price=line['unit_price'],
+                    currency=quotation_currency,
                     discount_amount=Decimal(0),
                     tax_amount=Decimal(0),
                     line_total=line['line_total']
@@ -141,38 +141,52 @@ class QuotationService:
                 db.add(quotation_line)
             
             await db.commit()
-            await db.refresh(quotation)
-            return quotation
+            result = await db.execute(select(Quotation).options(selectinload(Quotation.lines)).where(Quotation.id == quotation.id))
+            return result.scalar_one()
         except HTTPException:
             await db.rollback()
             raise
         except Exception:
             await db.rollback()
             raise
-    
+
     @staticmethod
-    async def list(db: AsyncSession, skip: int = 0, limit: int = 100, user_id: str = None, user_roles: list = None):
+    async def update_status(db: AsyncSession, quotation_id: str, target_status: str, user_id: str = None, user_roles: list = None):
         if not user_roles or len(user_roles) == 0:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-        query = select(Quotation)
-        if 'admin' in user_roles or 'staff' in user_roles:
-            pass
-        elif 'customer' in user_roles:
-            customer_result = await db.execute(select(Customer).where(Customer.user_id == user_id))
-            customer = customer_result.scalar_one_or_none()
-            if not customer:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-            query = query.where(Quotation.customer_id == customer.id)
-        else:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-        result = await db.execute(query.offset(skip).limit(limit))
-        return result.scalars().all()
-    
+        quotation = await QuotationService.get(db, quotation_id, user_id, user_roles)
+        
+        valid_transitions = {
+            'draft': ['sent', 'cancelled'],
+            'sent': ['accepted', 'cancelled'],
+            'accepted': ['converted', 'cancelled'],
+            'converted': [],
+            'cancelled': []
+        }
+        
+        if target_status not in valid_transitions.get(quotation.status, []):
+            raise HTTPException(status_code=400, detail="Invalid status transition")
+        
+        if target_status == 'accepted' and quotation.valid_until and quotation.valid_until < datetime.utcnow():
+            raise HTTPException(status_code=400, detail="Quotation expired")
+        
+        quotation.status = target_status
+        if target_status == 'accepted':
+            quotation.approved_by = user_id
+            quotation.approved_at = datetime.utcnow()
+        elif target_status in ['rejected', 'cancelled']:
+            quotation.rejected_by = user_id
+            quotation.rejected_at = datetime.utcnow()
+        
+        await db.commit()
+        result = await db.execute(select(Quotation).options(selectinload(Quotation.lines)).where(Quotation.id == quotation.id))
+        return result.scalar_one()
+
     @staticmethod
     async def get(db: AsyncSession, quotation_id: str, user_id: str = None, user_roles: list = None):
         if not user_roles or len(user_roles) == 0:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-        result = await db.execute(select(Quotation).where(Quotation.id == quotation_id))
+        result = await db.execute(select(Quotation).options(selectinload(Quotation.lines)).where(Quotation.id == quotation_id))
         quotation = result.scalar_one_or_none()
         if not quotation:
             raise HTTPException(status_code=404, detail="Quotation not found")
@@ -186,38 +200,3 @@ class QuotationService:
             return quotation
         else:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    
-    @staticmethod
-    async def update_status(db: AsyncSession, quotation_id: str, target_status: str, user_id: str = None, user_roles: list = None):
-        if not user_roles or len(user_roles) == 0:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-        quotation = await QuotationService.get(db, quotation_id, user_id, user_roles)
-        
-        valid_transitions = {
-            'draft': ['sent', 'cancelled'],
-            'sent': ['accepted', 'cancelled'],
-            'accepted': ['converted', 'cancelled'],
-            'converted': [],
-            'cancelled': [],
-            'expired': []
-        }
-        
-        if target_status not in valid_transitions.get(quotation.status, []):
-            raise HTTPException(status_code=400, detail=f"Invalid transition from {quotation.status} to {target_status}")
-        
-        if target_status == 'accepted':
-            if quotation.valid_until and quotation.valid_until < datetime.utcnow():
-                raise HTTPException(status_code=400, detail="Cannot accept expired quotation")
-            if user_roles and 'admin' not in user_roles and 'staff' not in user_roles:
-                if 'customer' not in user_roles:
-                    raise HTTPException(status_code=403, detail="Access denied")
-                customer_result = await db.execute(select(Customer).where(Customer.user_id == user_id))
-                customer = customer_result.scalar_one_or_none()
-                if not customer or str(customer.id) != str(quotation.customer_id):
-                    raise HTTPException(status_code=403, detail="Access denied")
-        
-        quotation.status = target_status
-        quotation.updated_at = datetime.utcnow()
-        await db.commit()
-        await db.refresh(quotation)
-        return quotation
