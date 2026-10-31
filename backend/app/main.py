@@ -11,6 +11,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_url, "http://localhost:5173"],
+    # Allow Vercel preview deployments belonging to this Vercel team/project namespace.
+    # Keep the production frontend origin explicitly allowlisted above.
+    allow_origin_regex=r"https://[a-z0-9-]+-2k24cs1g2413729-6539s-projects[.]vercel[.]app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
