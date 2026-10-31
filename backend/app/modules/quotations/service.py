@@ -12,15 +12,17 @@ import uuid
 class QuotationService:
     @staticmethod
     async def _check_customer_access(db: AsyncSession, customer_id: str, user_id: str, user_roles: list):
-        if not user_roles:
-            return False
+        if not user_roles or len(user_roles) == 0:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
         if 'admin' in user_roles or 'staff' in user_roles:
             return True
         if 'customer' in user_roles:
             result = await db.execute(select(Customer).where(Customer.user_id == user_id))
             customer = result.scalar_one_or_none()
-            return customer and str(customer.id) == str(customer_id)
-        return False
+            if not customer or str(customer.id) != str(customer_id):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+            return True
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     
     @staticmethod
     async def create(db: AsyncSession, data: dict, user_id: str = None, user_roles: list = None):
@@ -28,11 +30,11 @@ class QuotationService:
         customer_id = data.get('customer_id')
         quotation_currency = data.get('currency', 'USD')
         
-        # Check ownership
-        if not await QuotationService._check_customer_access(db, customer_id, user_id, user_roles):
-            raise HTTPException(status_code=403, detail="Access denied")
+        if not user_roles or len(user_roles) == 0:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
         
-        # Validate customer exists
+        await QuotationService._check_customer_access(db, customer_id, user_id, user_roles)
+        
         customer_result = await db.execute(select(Customer).where(Customer.id == customer_id, Customer.deleted_at.is_(None)))
         if not customer_result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Customer not found")
@@ -150,32 +152,45 @@ class QuotationService:
     
     @staticmethod
     async def list(db: AsyncSession, skip: int = 0, limit: int = 100, user_id: str = None, user_roles: list = None):
+        if not user_roles or len(user_roles) == 0:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
         query = select(Quotation)
-        if user_roles and 'admin' not in user_roles and 'staff' not in user_roles:
+        if 'admin' in user_roles or 'staff' in user_roles:
+            pass
+        elif 'customer' in user_roles:
             customer_result = await db.execute(select(Customer).where(Customer.user_id == user_id))
             customer = customer_result.scalar_one_or_none()
-            if customer:
-                query = query.where(Quotation.customer_id == customer.id)
-            else:
-                return []
+            if not customer:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+            query = query.where(Quotation.customer_id == customer.id)
+        else:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
         result = await db.execute(query.offset(skip).limit(limit))
         return result.scalars().all()
     
     @staticmethod
     async def get(db: AsyncSession, quotation_id: str, user_id: str = None, user_roles: list = None):
+        if not user_roles or len(user_roles) == 0:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
         result = await db.execute(select(Quotation).where(Quotation.id == quotation_id))
         quotation = result.scalar_one_or_none()
         if not quotation:
             raise HTTPException(status_code=404, detail="Quotation not found")
-        if user_roles and 'admin' not in user_roles and 'staff' not in user_roles:
+        if 'admin' in user_roles or 'staff' in user_roles:
+            return quotation
+        elif 'customer' in user_roles:
             customer_result = await db.execute(select(Customer).where(Customer.user_id == user_id))
             customer = customer_result.scalar_one_or_none()
             if not customer or str(customer.id) != str(quotation.customer_id):
                 raise HTTPException(status_code=403, detail="Access denied")
-        return quotation
+            return quotation
+        else:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     
     @staticmethod
     async def update_status(db: AsyncSession, quotation_id: str, target_status: str, user_id: str = None, user_roles: list = None):
+        if not user_roles or len(user_roles) == 0:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
         quotation = await QuotationService.get(db, quotation_id, user_id, user_roles)
         
         valid_transitions = {
@@ -193,8 +208,9 @@ class QuotationService:
         if target_status == 'accepted':
             if quotation.valid_until and quotation.valid_until < datetime.utcnow():
                 raise HTTPException(status_code=400, detail="Cannot accept expired quotation")
-            # Customers can accept their own quotations
             if user_roles and 'admin' not in user_roles and 'staff' not in user_roles:
+                if 'customer' not in user_roles:
+                    raise HTTPException(status_code=403, detail="Access denied")
                 customer_result = await db.execute(select(Customer).where(Customer.user_id == user_id))
                 customer = customer_result.scalar_one_or_none()
                 if not customer or str(customer.id) != str(quotation.customer_id):
