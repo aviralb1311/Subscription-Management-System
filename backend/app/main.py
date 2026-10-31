@@ -73,3 +73,7 @@ app.include_router(subscriptions_router.router, prefix="/api/v1/subscriptions", 
 
 from app.modules.invoices import router as invoices_router
 app.include_router(invoices_router.router, prefix="/api/v1/invoices", tags=["Invoices"])
+
+
+from app.modules.payments import router as payments_router
+app.include_router(payments_router.router, prefix="/api/v1/payments", tags=["Payments"])
