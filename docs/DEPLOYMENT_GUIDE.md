@@ -12,3 +12,8 @@
 ## Database
 - PostgreSQL managed
 - Run: `alembic upgrade head`
+
+## Database Bootstrap
+- Use `DATABASE_URL` for async operations
+- Use `DATABASE_URL_SYNC` for Alembic migrations
+- Ensure SSL parameters for managed PostgreSQL
