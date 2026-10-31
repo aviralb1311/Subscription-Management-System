@@ -28,3 +28,8 @@ async def get_customer(customer_id: str, db: AsyncSession = Depends(get_db), cur
 @router.put("/{customer_id}", response_model=CustomerResponse)
 async def update_customer(customer_id: str, customer: CustomerUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_role("admin", "staff"))):
     return await CustomerService.update(db, customer_id, customer.model_dump(exclude_unset=True))
+
+
+@router.delete("/{customer_id}")
+async def delete_customer(customer_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_role("admin"))):
+    return await CustomerService.delete(db, customer_id)

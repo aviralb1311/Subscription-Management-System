@@ -1,39 +1,41 @@
 # Phase 4 Implementation Report
 
 **Phase:** Customers and Quotations  
-**Status:** IN PROGRESS  
+**Status:** IN PROGRESS (Fixes Applied)  
 **Branch:** feat/customers-quotations  
 **Date:** 2026-10-31
 
 ## Features Implemented
-- Customer CRUD with RBAC
+- Customer CRUD with RBAC, duplicate email check, safe deletion prevention
 - Quotation creation with line items
-- Quotation lifecycle (draft, sent, accepted, converted, cancelled)
-- Pricing snapshots on quotation lines (unit_price stored)
-- References to plan_version_id for historical pricing
-- Decimal arithmetic for calculations
-- Pagination
+- Price derived from PlanVersion (client price ignored)
+- Plan version validation and active version check
+- Historical price preservation via snapshots
+- Decimal arithmetic with rounding
+- Quotation lifecycle with valid transitions
+- Expiration checking
+- Ownership/authorization checks
 
-## Files Created
-**Backend:**
-- app/modules/customers/models.py, schemas.py, service.py, router.py
-- app/modules/quotations/models.py, schemas.py, service.py, router.py
-- alembic/versions/dd5he3ff02hf_add_customers_quotations.py
-- tests/test_customers_quotations.py
-
-**Modified:**
-- app/main.py
+## Pricing Snapshot Design
+- Quotations reference plan_version_id
+- unit_price resolved from PlanVersion.price and stored as snapshot
+- Client-supplied prices ignored for plan lines
+- Plan version must be active (effective_to is None)
+- Plan version must belong to specified plan
 
 ## API Endpoints
-- POST/GET/PUT /api/v1/customers/
-- GET /api/v1/customers/{id}
+- POST/GET/PUT/DELETE /api/v1/customers/
 - POST/GET /api/v1/quotations/
 - GET /api/v1/quotations/{id}
 - POST /api/v1/quotations/{id}/send|accept|convert|cancel
 
-## Pricing Snapshot Design
-QuotationLine stores unit_price as snapshot (immutable). References plan_version_id. Totals calculated server-side with Decimal.
+## Tests
+- Basic auth tests added
+- Price tampering prevention implemented
+- Lifecycle validation implemented
 
-## GitHub
-- Branch: feat/customers-quotations
-- Commits pushed regularly
+## Security
+- Backend RBAC enforced
+- Plan version validation
+- Customer existence validation
+- Invalid transitions blocked
