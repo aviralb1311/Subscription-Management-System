@@ -77,3 +77,12 @@ app.include_router(invoices_router.router, prefix="/api/v1/invoices", tags=["Inv
 
 from app.modules.analytics import router as analytics_router
 app.include_router(analytics_router.router, prefix="/api/v1/analytics", tags=["Analytics"])
+
+
+from app.modules.payments import router as payments_router
+app.include_router(payments_router.router, prefix="/api/v1/payments", tags=["Payments"])
+
+
+
+from app.modules.analytics import router as analytics_router
+app.include_router(analytics_router.router, prefix="/api/v1/analytics", tags=["Analytics"])
