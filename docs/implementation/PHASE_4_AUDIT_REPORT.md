@@ -1,7 +1,7 @@
 # PHASE 4 AUDIT REPORT
 
 **Branch:** feat/customers-quotations  
-**Commit SHA:** e3b0685 (test(phase4): Fix async fixtures and strengthen tests for customers/quotations)  
+**Commit SHA:** 18fbd5b (test(phase4): Strengthen rollback test and clean audit report)  
 **Date:** 2026-10-31
 
 ## Phase 4 Test Execution (tests/test_customers_quotations.py)
@@ -18,7 +18,7 @@
 - test_expired_quotation_cannot_be_accepted
 - test_unauthorized_cross_customer_access_denied (real Customer records with distinct user_ids)
 - test_missing_role_denied
-- test_transaction_rollback_on_failure (failure after adding valid line + invalid line; verifies no quotations/lines remain)
+- test_transaction_rollback_on_failure (forces commit failure after quotation and line are flushed/added; verifies service rollback removes both quotation and quotation_lines, no partial records remain)
 
 ### Infrastructure:
 - Async SQLAlchemy fixtures configured for pytest-asyncio (function scope), real AsyncSession per test

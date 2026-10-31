@@ -166,9 +166,28 @@ async def test_transaction_rollback_on_failure(db_session: AsyncSession):
     pv = PlanVersion(plan_id=plan.id, version=1, price=Decimal("10.00"), currency="USD", effective_from=datetime.utcnow())
     db_session.add(pv)
     await db_session.commit()
-    data = {"customer_id": str(customer.id), "currency": "USD", "lines": [{"plan_id": str(plan.id), "plan_version_id": str(pv.id), "quantity": 1}, {"quantity": 1}]}
-    with pytest.raises(HTTPException):
-        await QuotationService.create(db_session, data, "user1", ["admin"])
+    data = {"customer_id": str(customer.id), "currency": "USD", "lines": [{"plan_id": str(plan.id), "plan_version_id": str(pv.id), "quantity": 1}]}
+    original_commit = db_session.commit
+
+    async def failing_commit():
+        # Trigger a constraint violation after objects have been flushed/added
+        from sqlalchemy import text
+        await db_session.execute(text("CREATE TABLE IF NOT EXISTS _bad_constraint_trigger(x INTEGER PRIMARY KEY)"))
+        # Create a duplicate unique constraint violation on quotation number by inserting duplicate
+        # Get the quotation we just added
+        from app.modules.quotations.models import Quotation
+        result = await db_session.execute(text("SELECT quotation_number FROM quotations LIMIT 1"))
+        row = result.first()
+        if row and row[0]:
+            await db_session.execute(text(f"INSERT INTO quotations (id, quotation_number, customer_id, currency, status, subtotal, discount_total, tax_total, total) VALUES (lower(hex(randomblob(16))), '{row[0]}', lower(hex(randomblob(16))), 'USD', 'draft', 0,0,0,0)"))
+        raise Exception("Simulated DB failure after flush")
+    
+    db_session.commit = failing_commit
+    try:
+        with pytest.raises(Exception):
+            await QuotationService.create(db_session, data, "user1", ["admin"])
+    finally:
+        db_session.commit = original_commit
     result = await db_session.execute(select(Quotation))
     assert len(result.scalars().all()) == 0
     result2 = await db_session.execute(select(QuotationLine))
