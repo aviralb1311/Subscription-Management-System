@@ -8,6 +8,7 @@ Create Date: 2026-10-31 10:05:00.000000
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
 revision = 'f1a2b3c4d5e6'
@@ -17,31 +18,27 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Align users table with current models
-    try:
-        op.alter_column('users', 'password_hash', new_column_name='hashed_password')
-    except Exception:
-        pass
-    try:
-        op.drop_column('users', 'first_name')
-    except Exception:
-        pass
-    try:
-        op.drop_column('users', 'last_name')
-    except Exception:
-        pass
-    try:
-        op.drop_column('users', 'email_verified_at')
-    except Exception:
-        pass
-    try:
-        op.drop_column('users', 'last_login_at')
-    except Exception:
-        pass
-    op.add_column('users', sa.Column('full_name', sa.String(length=255), nullable=True))
+    bind = op.get_bind()
+    inspector = inspect(bind)
     
-    # Add role_permissions if missing
-    try:
+    # Preserve existing data when aligning users table
+    columns = {c['name'] for c in inspector.get_columns('users')}
+    
+    if 'password_hash' in columns and 'hashed_password' not in columns:
+        op.alter_column('users', 'password_hash', new_column_name='hashed_password')
+    elif 'hashed_password' not in columns:
+        op.add_column('users', sa.Column('hashed_password', sa.String(length=255), nullable=True))
+        op.execute('UPDATE users SET hashed_password = password_hash WHERE password_hash IS NOT NULL')
+        op.alter_column('users', 'hashed_password', nullable=False)
+    
+    # Add full_name from first_name/last_name if missing, preserving data
+    if 'full_name' not in columns:
+        op.add_column('users', sa.Column('full_name', sa.String(length=255), nullable=True))
+        op.execute("UPDATE users SET full_name = TRIM(CONCAT(COALESCE(first_name,''), ' ', COALESCE(last_name,''))) WHERE full_name IS NULL")
+    
+    # role_permissions table
+    tables = set(inspector.get_table_names())
+    if 'role_permissions' not in tables and 'permissions' in tables and 'roles' in tables:
         op.create_table('role_permissions',
         sa.Column('role_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('permission_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -49,46 +46,20 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['role_id'], ['roles.id'], ),
         sa.PrimaryKeyConstraint('role_id', 'permission_id')
         )
-    except Exception:
-        pass
     
-    # Add permissions to roles if missing
-    try:
-        op.add_column('roles', sa.Column('permissions', sa.JSON(), nullable=True))
-    except Exception:
-        pass
+    # roles.permissions
+    role_cols = {c['name'] for c in inspector.get_columns('roles')}
+    if 'permissions' not in role_cols:
+        op.add_column('roles', sa.Column('permissions', postgresql.JSONB(astext_type=sa.Text()), nullable=True))
 
 
 def downgrade() -> None:
-    try:
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    tables = set(inspector.get_table_names())
+    role_cols = {c['name'] for c in inspector.get_columns('roles')}
+    
+    if 'permissions' in role_cols:
         op.drop_column('roles', 'permissions')
-    except Exception:
-        pass
-    try:
+    if 'role_permissions' in tables:
         op.drop_table('role_permissions')
-    except Exception:
-        pass
-    try:
-        op.drop_column('users', 'full_name')
-    except Exception:
-        pass
-    try:
-        op.add_column('users', sa.Column('last_login_at', sa.DateTime(), nullable=True))
-    except Exception:
-        pass
-    try:
-        op.add_column('users', sa.Column('email_verified_at', sa.DateTime(), nullable=True))
-    except Exception:
-        pass
-    try:
-        op.add_column('users', sa.Column('last_name', sa.String(length=100), nullable=True))
-    except Exception:
-        pass
-    try:
-        op.add_column('users', sa.Column('first_name', sa.String(length=100), nullable=True))
-    except Exception:
-        pass
-    try:
-        op.alter_column('users', 'hashed_password', new_column_name='password_hash')
-    except Exception:
-        pass
