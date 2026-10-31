@@ -25,3 +25,6 @@ async def health_check():
 @app.get("/")
 async def root():
     return {"message": "Subscription Intelligence Platform API"}
+
+from app.modules.auth.router import router as auth_router
+app.include_router(auth_router, prefix="/api/v1")
