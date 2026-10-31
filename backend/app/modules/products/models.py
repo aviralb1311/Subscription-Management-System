@@ -1,79 +1,73 @@
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Integer, Numeric, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Numeric, Text, JSON, Integer, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
 from app.core.database import Base
+from app.core.db_types import GUID
 
 
 class Product(Base):
     __tablename__ = "products"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False)
-    code = Column(String(100), unique=True, index=True)
-    product_type = Column(String(50))
+    code = Column(String(100), unique=True, nullable=False)
     description = Column(Text)
-    notes = Column(Text)
-    cost_price = Column(Numeric(12, 2), default=0)
-    sales_price = Column(Numeric(12, 2), default=0)
+    sales_price = Column(Numeric(15, 2).with_variant(Float, "sqlite"))
+    price_adjustment = Column(Numeric(15, 2).with_variant(Float, "sqlite"), default=0)
+    currency = Column(String(3), default="USD")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime)
 
-    variants = relationship("ProductVariant", back_populates="product", cascade="all, delete-orphan")
-    plans = relationship("Plan", back_populates="product")
-
-
-class ProductVariant(Base):
-    __tablename__ = "product_variants"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
-    name = Column(String(255), nullable=False)
-    sku = Column(String(100), unique=True, index=True)
-    attributes = Column(Text)
-    price_adjustment = Column(Numeric(12, 2), default=0)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    product = relationship("Product", back_populates="variants")
+    quotation_lines = relationship("QuotationLine", back_populates="product")
 
 
 class Plan(Base):
     __tablename__ = "plans"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"))
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False)
-    code = Column(String(100), unique=True, index=True)
-    billing_cycle = Column(String(20), nullable=False)  # daily, weekly, monthly, yearly
+    code = Column(String(100), unique=True, nullable=False)
+    description = Column(Text)
+    billing_cycle = Column(String(20))
     is_active = Column(Boolean, default=True)
-    auto_close = Column(Boolean, default=False)
-    allow_pause_resume = Column(Boolean, default=True)
-    availability_start = Column(DateTime)
-    availability_end = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime)
 
-    product = relationship("Product", back_populates="plans")
-    versions = relationship("PlanVersion", back_populates="plan", cascade="all, delete-orphan", order_by="PlanVersion.version.desc()")
+    versions = relationship("PlanVersion", back_populates="plan")
+    quotation_lines = relationship("QuotationLine", back_populates="plan")
 
 
 class PlanVersion(Base):
     __tablename__ = "plan_versions"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    plan_id = Column(UUID(as_uuid=True), ForeignKey("plans.id"), nullable=False)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    plan_id = Column(GUID(), ForeignKey("plans.id"), nullable=False)
     version = Column(Integer, nullable=False)
-    price = Column(Numeric(12, 2), nullable=False)
-    currency = Column(String(3), default="USD")
+    price = Column(Numeric(15, 2).with_variant(Float, "sqlite"), nullable=False)
+    currency = Column(String(3), nullable=False)
     effective_from = Column(DateTime, nullable=False)
     effective_to = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
-    created_by = Column(UUID(as_uuid=True))
 
     plan = relationship("Plan", back_populates="versions")
+    quotation_lines = relationship("QuotationLine", back_populates="plan_version")
+
+
+class ProductVariant(Base):
+    __tablename__ = "product_variants"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    product_id = Column(GUID(), ForeignKey("products.id"), nullable=False)
+    name = Column(String(255), nullable=False)
+    sku = Column(String(100))
+    price = Column(Numeric(15, 2).with_variant(Float, "sqlite"))
+    price_adjustment = Column(Numeric(15, 2).with_variant(Float, "sqlite"), default=0)
+    currency = Column(String(3), default="USD")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    product = relationship("Product", backref="variants")

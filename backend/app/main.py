@@ -33,10 +33,11 @@ from app.modules.products.router import router as products_router
 app.include_router(products_router, prefix="/api/v1")
 
 # Plans router
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from app.modules.products.schemas import PlanCreate, PlanUpdate, PlanResponse, PlanVersionResponse
 from app.modules.products.service import PlanService
 from app.core.dependencies import get_current_user, require_role
+from app.core.database import get_db
 from app.modules.auth.models import User
 from typing import List
 
@@ -59,3 +60,8 @@ async def create_plan_version(plan_id: str, price: float, currency: str = "USD",
     return await PlanService.create_version(db, plan_id, price, currency)
 
 app.include_router(plans_router, prefix="/api/v1")
+
+from app.modules.customers.router import router as customers_router
+from app.modules.quotations.router import router as quotations_router
+app.include_router(customers_router, prefix="/api/v1")
+app.include_router(quotations_router, prefix="/api/v1")
